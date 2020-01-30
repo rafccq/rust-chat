@@ -21,20 +21,21 @@ To end the application, type the command `\quit`
 
 ## Protocol
 
-The protocol is very simple: a header indicates the message type (MESSAGE, ACK, DISCONNECTED)
+The protocol is very simple: the header `h` indicates the message type (MESSAGE, ACK, DISCONNECTED), followed by the byte buffer contents, which holds the encoded message. When the message type is ACK or DISCONNECTED, contents is empty:
+
 | h | contents |
 
-The byte buffer _contents _ holds the encoded message. When the message type is ACK or DISCONNECTED, contents is empty. Example:
+Examples:
 
-ACK:
+**ACK:**
 
 | 0xA |
 
-DISCONNECTED:
+**DISCONNECTED:**
 
 | 0xC |
 
-MESSAGE "Hello":
+**MESSAGE "Hello":**
 
 | 0xB | 'h' 'e' 'l' 'l' 'o' |
 
