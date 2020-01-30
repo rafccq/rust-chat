@@ -50,5 +50,5 @@ When a connection is stablished, both modes will call the `process_connections()
 ## Possible Improvements
 - Handle errors in try_send()
 - Handle unix signals like SIGINT, that force the termination of the application
-- Handle commands (such as "\quit") outside the `process_connections()` function. Actually, this improvement involves a more general issue: currently, client and server are implemented in the same function, process_connections(), exactly the same way. However, they will probably have different requirements in the future.
+- Handle commands (such as "\quit") outside the `process_connections()` function. Actually, this improvement involves a more general issue: currently, client and server are implemented in the same function, `process_connections()`, exactly the same way. However, they will probably have different requirements in the future.
 
