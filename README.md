@@ -1,7 +1,7 @@
 # Simple Rust 1-1 chat
 
 A simple one-on-one chat application. It can run in either a server or client mode. As a server, it will wait for clients to connect. Upon the client's connection termination, it will continue listening for the next client.
-Once a connection is stabilized, client and server can send messages to each other. The message receiver will acknowledge it with an ack, and the sender will measure the roundtrip time.
+Once a connection is stabilized, client and server can send messages to each other. The message receiver will acknowledge it with an ACK, and the sender will measure the roundtrip time.
 
 ## Usage
 ``` 
@@ -21,7 +21,7 @@ To end the application, type the command `\quit`
 
 ## Protocol
 
-The protocol is very simple: the header `h` indicates the message type (MESSAGE, ACK, DISCONNECTED), followed by the byte buffer contents, which holds the encoded message. When the message type is ACK or DISCONNECTED, contents is empty:
+The protocol is very simple: the header `h` indicates the message type (MESSAGE, ACK, DISCONNECTED), followed by the byte buffer `contents`, which holds the encoded message. When the message type is ACK or DISCONNECTED, `contents` is empty:
 
 | h | contents |
 
