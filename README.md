@@ -41,7 +41,7 @@ MESSAGE "Hello":
 The message contents are converted to a utf8 string on the application level.
 
 ## Implementation
-When a connection is stablished, both modes will call the `process` function, the client will call it once and return when it's finished, while the server will loop, always waiting for new connections.
+When a connection is stablished, both modes will call the `process_connections()` function, the client will call it once and return when it's finished, while the server will loop, always waiting for new connections. The `process_connections()` function will spawn 2 threads, one for receiving messages from the network, and another to read the console input. Whenever there's an event from those 2 threads, they will communicate it to the main thread via a mpsc channel.
 
 
 
@@ -49,5 +49,5 @@ When a connection is stablished, both modes will call the `process` function, th
 ## Possible Improvements
 - Handle errors in try_send()
 - Handle unix signals like SIGINT, that force the termination of the application
-- Handle commands (such as "\quit") outside the process_connections() function. Actually, this improvement involves a more general issue: currently, client and server are implemented in the same function, process_connections(), exactly the same way. However, they will probably have different requirements in the future.
+- Handle commands (such as "\quit") outside the `process_connections()` function. Actually, this improvement involves a more general issue: currently, client and server are implemented in the same function, process_connections(), exactly the same way. However, they will probably have different requirements in the future.
 
