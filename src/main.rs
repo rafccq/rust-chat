@@ -1,8 +1,12 @@
-use std::thread;
 use std::error::Error;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::Write;
 
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
+use tokio::signal;
 
 mod codec;
 
@@ -25,24 +29,71 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+async fn read_console_input(mut tx: mpsc::Sender<InternalMessage>, client_connected: &AtomicBool) -> Result<(), Box<dyn Error>> {
+    let mut input = String::new();
+
+    loop {
+        match std::io::stdin().read_line(&mut input) {
+            Err(error) => println!("Unable to read from the console: {}", error),
+            Ok(_n) => {
+                input.pop();
+                if client_connected.load(Ordering::Relaxed) {
+                    // process commands: currently only \quit is implemented
+                    if input == "\\quit" {
+                        tx.try_send(InternalMessage::Quit);
+                        break;
+                    }
+
+                    tx.try_send(InternalMessage::Input(input.clone()));
+               }
+            }
+        }
+        input.clear();
+    }
+
+    Ok(())
+}
+
 async fn run_server(addr: &str, port: &str) -> Result<(), Box<dyn Error>> {
     let mut listener = TcpListener::bind(addr).await?;
 
+    let shared = Arc::new(AtomicBool::new(false));
+    let client_connected = Arc::clone(&shared);
+
     println!("Server started on port {}", port);
+    
+    let (tx, mut rx) = mpsc::channel(1);
+    let tx_input = tx.clone();
+    let mut tx_signal = tx.clone();
+
+    tokio::spawn(async move { read_console_input(tx_input, &client_connected).await; });
 
     loop {
-        println!("Listening...",);
+        println!("Listening...");
+
         let (stream, addr) = listener.accept().await?;
         println!("New connection: {}", addr);
+        
+        let client_connected = Arc::clone(&shared);
+        
+        client_connected.store(true, Ordering::Relaxed);
 
-        match process_connection(stream).await {
+        match process_connection(stream, tx.clone(), &mut rx).await {
             // client disconnected, just wait for next client
-            ProcessResult::PeerDisconnected => println!("Client disconnected"),
+            ProcessResult::PeerDisconnected => {
+                println!("Client disconnected");
+                client_connected.store(false, Ordering::Relaxed);
+            },
 
             // user quit: just exit
             ProcessResult::Error | ProcessResult::UserQuit => {
-                break
-            }
+                client_connected.store(false, Ordering::Relaxed);
+                break;
+            },
+            ProcessResult::Terminated => {
+                client_connected.store(false, Ordering::Relaxed);
+                break;
+            },
         }
     }
 
@@ -53,12 +104,62 @@ async fn run_server(addr: &str, port: &str) -> Result<(), Box<dyn Error>> {
 async fn run_client(addr: &str) -> Result<(), Box<dyn Error>> {
     let stream = TcpStream::connect(addr).await?;
     println!("Successfully connected to {}", addr);
+    
+    let (tx, mut rx) = mpsc::channel(1);
+    let mut tx_input = tx.clone();
+    let mut tx_signal = tx.clone();
 
-    match process_connection(stream).await {
+    let shared = Arc::new(AtomicBool::new(true));
+    let server_connected = Arc::clone(&shared);
+
+    // SIGINT signal handler
+    tokio::spawn(async move {
+        signal::ctrl_c().await;
+        tx_signal.try_send(InternalMessage::Terminated);
+    });
+
+    // client console input thread:
+    tokio::spawn(async move {
+        let mut input = String::new();
+
+        loop {
+            match std::io::stdin().read_line(&mut input) {
+                Err(error) => println!("Unable to read from the console: {}", error),
+                Ok(_n) => {
+                    input.pop();
+
+                    if !server_connected.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    if input == "\\quit" {
+                        tx_input.try_send(InternalMessage::Quit);
+                        break;
+                    }
+                    
+                    tx_input.try_send(InternalMessage::Input(input.clone()));
+                }
+            }
+            input.clear();
+        }
+    });
+
+    match process_connection(stream, tx.clone(), &mut rx).await {
         ProcessResult::PeerDisconnected => {
-            println!("Server disconnected");
-            // somehow, stdin is still stuck at this point, waiting for input, so manually exit
-            std::process::exit(0);
+            print!("Disconnected from server, press any key to exit... ");
+            std::io::stdout().flush();
+
+            // signal the console input thread that the server was disconnected
+            let client_connected = Arc::clone(&shared);
+            client_connected.store(false, Ordering::Relaxed);
+        },
+        ProcessResult::Terminated => {
+            print!("\nPress any key to exit... ");
+            std::io::stdout().flush();
+
+            // signal the console input thread that the server was disconnected
+            let client_connected = Arc::clone(&shared);
+            client_connected.store(false, Ordering::Relaxed);
         },
         // Currently all errors are handled inside process_connection()
         _ => {}
@@ -67,7 +168,7 @@ async fn run_client(addr: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn read_args() -> (String, String, String) {
-    let matches = App::new("ahref application: 1-1 chat")
+    let matches = App::new("A simple 1-1 chat application")
         .version("0.1")
         .author("Rafael C. <rafa.gdev@gmail.com>")
         .about("")
